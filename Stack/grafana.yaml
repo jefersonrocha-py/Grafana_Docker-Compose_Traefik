@@ -1,0 +1,81 @@
+version: "3.9"
+
+services:
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:latest # irá trazer a última imagem disponível
+    restart: always
+    networks:
+      - web
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=yourpassword # troque pela senha desejada
+      - GF_SERVER_ROOT_URL=https://grafana.seudominio.com # URL para o Grafana
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - grafana_data:/var/lib/grafana
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.seudominio.com`)" # inserá o FQDN que está apontado no seu Servidor DNS ( Apontamento Tipo A para o IP que está o Traefik Proxy ou Apontamento CNAME)
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls.certresolver=myresolver"
+      - "traefik.http.routers.grafana.middlewares=default-headers"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.http.services.grafana.loadbalancer.server.scheme=http"
+      - "traefik.http.services.grafana.loadbalancer.sticky=true"
+
+  traefik:
+    container_name: traefik-gfn # Nome do container
+    restart: always # Reinicia o contêiner em caso de falha
+    image: traefik:v2.10
+    command:
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.email=seu-email@example.com" # troque pelo seu email
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=INFO"
+      - "--serversTransport.insecureSkipVerify=true"
+    ports:
+      - "1280:80" #porta remapeadas
+      - "12443:443"
+    networks:
+      - web
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./letsencrypt/acme.json:/letsencrypt/acme.json"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls.certresolver=myresolver"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=default-headers"
+      - "traefik.http.middlewares.default-headers.headers.customresponseheaders.Access-Control-Allow-Origin=*"
+      - "traefik.http.middlewares.default-headers.headers.customresponseheaders.Access-Control-Allow-Methods=GET, POST, OPTIONS, PUT, DELETE"
+      - "traefik.http.middlewares.default-headers.headers.customresponseheaders.Access-Control-Allow-Headers=Authorization,Content-Type,DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Range,Range"
+      - "traefik.http.middlewares.default-headers.headers.customresponseheaders.Access-Control-Expose-Headers=Content-Length,Content-Range"
+      - "traefik.http.middlewares.default-headers.headers.customresponseheaders.Feature-Policy=camera 'self'; microphone 'self'; geolocation 'self'; midi 'self'; notifications 'self'; push 'self'; vibrate 'self'; fullscreen 'self'"
+      - "traefik.http.middlewares.default-headers.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.default-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.default-headers.headers.stsPreload=true"
+      - "traefik.http.middlewares.default-headers.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.default-headers.headers.contentSecurityPolicy=default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self';"
+      - "traefik.http.middlewares.default-headers.headers.referrerPolicy=no-referrer"
+      - "traefik.http.middlewares.default-headers.headers.frameDeny=true"
+      - "traefik.http.middlewares.default-headers.headers.sslRedirect=true"
+      - "traefik.http.middlewares.default-headers.headers.sslForceHost=true"
+      - "traefik.http.middlewares.default-headers.headers.sslTemporaryRedirect=true"
+      - "traefik.http.middlewares.default-headers.headers.browserXSSFilter=true"
+      - "traefik.http.middlewares.default-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.default-headers.headers.customFrameOptionsValue=SAMEORIGIN"
+
+volumes:
+  grafana_data:
+    driver: local
+
+networks:
+  web:
+    external: true
